@@ -1,10 +1,10 @@
 {
-  "email": "manishvashisht291@gmail.com",
+  "email": "manish.vashisht@gmail.com",
   "secret": "ABC",
-  "task": "5",
-  "round": 12,
-  "nonce": "manual",
+  "task": "555",
+  "round": 1,
+  "nonce": "sd",
   "evaluation_url": "https://api.github.com/repos/MVRules/Project_1/dispatches",
-  "brief": "Build a minimal page",
+  "brief": "ss",
   "checks": ["Repo has MIT license","README.md is professional"]
 }
