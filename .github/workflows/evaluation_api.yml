@@ -1,4 +1,4 @@
-name: Evaluation API (robust, no validations)
+name: Evaluation API (robust JSONL append)
 
 on:
   repository_dispatch:
@@ -15,34 +15,32 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # Optional: quick peek at the raw event for troubleshooting
-      - name: Debug event (optional)
-        run: |
-          set -euo pipefail
-          echo "Event path: $GITHUB_EVENT_PATH"
-          head -n 50 "$GITHUB_EVENT_PATH" || true
-          echo "--- client_payload ---"
-          jq '.client_payload' "$GITHUB_EVENT_PATH" || true
-
-      # Always produce a valid JSON object for the submission
+      # Read payload directly from the event JSON so it's always valid
       - name: Save submission payload (from event file)
         run: |
           set -euo pipefail
-          # Extract .client_payload (or {} if missing) as compact JSON
           jq -c '.client_payload // {}' "$GITHUB_EVENT_PATH" > submission.json
           echo "submission.json:"
           jq . submission.json
 
-      # Append safely to repos.jsonl (create the file if missing)
+      # Build one JSON line, append safely to repos.jsonl, then print that exact line
       - name: Append to repos.jsonl (safe)
         run: |
           set -euo pipefail
+          # Ensure log file exists (create if missing)
           [ -f repos.jsonl ] || : > repos.jsonl
+
           ts=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          # Coerce non-object/null to {} then add timestamp field
-          jq --arg ts "$ts" '(. // {}) + {timestamp: $ts}' submission.json >> repos.jsonl
-          echo "Last appended line:"
-          tail -n 1 repos.jsonl | jq .
+
+          # Build the new JSON line in a temp file (compact, single-line JSON)
+          jq -c --arg ts "$ts" '(. // {}) + {timestamp: $ts}' submission.json > line.json
+
+          # Append the line and a newline explicitly (avoid partial/merged lines)
+          cat line.json >> repos.jsonl
+          printf "\n" >> repos.jsonl
+
+          echo "Last appended line (parsed):"
+          cat line.json | jq .
 
       - name: Commit repos.jsonl
         uses: stefanzweifel/git-auto-commit-action@v5
