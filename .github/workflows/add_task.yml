@@ -1,0 +1,30 @@
+name: Add Task to tasks.json
+on:
+  workflow_dispatch:
+    inputs:
+      email: { description: "Email", required: true }
+      task:  { description: "Task ID", required: true }
+      round: { description: "Round (number)", required: true, default: "1" }
+      nonce: { description: "Nonce", required: true, default: "manual" }
+permissions:
+  contents: write
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure tasks.json exists
+        run: |
+          [ -f tasks.json ] || echo "[]" > tasks.json
+      - name: Append task
+        run: |
+          jq --arg e "${{ github.event.inputs.email }}" \
+             --arg t "${{ github.event.inputs.task }}" \
+             --argjson r "${{ github.event.inputs.round }}" \
+             --arg n "${{ github.event.inputs.nonce }}" \
+             '. + [{email:$e, task:$t, round:$r, nonce:$n}]' tasks.json > tasks.tmp && mv tasks.tmp tasks.json
+          cat tasks.json | jq .
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: add task ${{ github.event.inputs.task }} (r${{ github.event.inputs.round }})"
+          file_pattern: tasks.json
