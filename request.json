@@ -1,10 +1,10 @@
 {
   "email": "abc@gmail.com",
   "secret": "ABC",
-  "task": "333",
-  "round": 1,
+  "task": "1224",
+  "round": 122,
   "nonce": "manualdsds",
   "evaluation_url": "https://api.github.com/repos/MVRules/Project_1/dispatches",
-  "brief": "Build a minimal page",
+  "brief": "Build a minimal pagecs",
   "checks": ["Repo has MIT license","README.md is professional"]
 }
