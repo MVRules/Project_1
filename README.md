@@ -1,4 +1,4 @@
-# Task: 45 (Round 1)
+# Task: quizlet (Round 1)
 
 Deployed at: https://MVRules.github.io/Project_1/
 
