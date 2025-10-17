@@ -3,7 +3,33 @@ name: Receive Task & Build/Deploy
 on:
   repository_dispatch:
     types: [build_task, revise_task]
-  workflow_dispatch: {}  # allows manual test
+  workflow_dispatch:
+    inputs:
+      email:
+        description: "Student email"
+        required: true
+      secret:
+        description: "Your BUILD_SECRET (must match repo secret)"
+        required: true
+      task:
+        description: "Task ID"
+        required: true
+      round:
+        description: "Round number"
+        required: true
+        default: "1"
+      nonce:
+        description: "Nonce (any unique string)"
+        required: true
+        default: "manual"
+      brief:
+        description: "Brief"
+        required: true
+        default: "Build a minimal page"
+      evaluation_url:
+        description: "Evaluator dispatch URL"
+        required: true
+        default: "https://api.github.com/repos/MVRules/Project_1/dispatches"
 
 permissions:
   contents: write
@@ -18,24 +44,26 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
+      # If manual run: build request.json from the form inputs
       - name: If manual run, create request.json
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
-          cat > request.json <<'JSON'
+          cat > request.json <<JSON
           {
-            "email": "you@example.com",
-            "secret": "REPLACE_WITH_YOUR_BUILD_SECRET",
-            "task": "quizlet-001",
-            "round": 1,
-            "nonce": "manual",
-            "evaluation_url": "https://api.github.com/repos/MVRules/Project_1/dispatches",
-            "brief": "Build a minimal page",
+            "email": "${{ github.event.inputs.email }}",
+            "secret": "${{ github.event.inputs.secret }}",
+            "task": "${{ github.event.inputs.task }}",
+            "round": ${{ github.event.inputs.round }},
+            "nonce": "${{ github.event.inputs.nonce }}",
+            "evaluation_url": "${{ github.event.inputs.evaluation_url }}",
+            "brief": "${{ github.event.inputs.brief }}",
             "checks": ["Repo has MIT license","README.md is professional"]
           }
           JSON
           cat request.json
 
-      - name: Save request (dispatch path)
+      # If dispatched by instructor: save payload
+      - name: If repository_dispatch, save request.json
         if: ${{ github.event_name == 'repository_dispatch' }}
         run: |
           echo '${{ toJson(github.event.client_payload) }}' > request.json
@@ -43,8 +71,14 @@ jobs:
 
       - name: Verify secret
         run: |
-          REQ_SECRET=$(jq -r '.secret' request.json)
-          if [ "$REQ_SECRET" != "${{ secrets.BUILD_SECRET }}" ]; then
+          REQ_SECRET=$(jq -r '.secret // empty' request.json)
+          if [ -z "$REQ_SECRET" ]; then
+            echo "❌ Missing 'secret' in request.json"
+            exit 1
+          fi
+          REQ_CLEAN=$(printf "%s" "$REQ_SECRET" | tr -d '\r' | awk '{$1=$1};1')
+          ACT_CLEAN=$(printf "%s" "${{ secrets.BUILD_SECRET }}" | tr -d '\r' | awk '{$1=$1};1')
+          if [ "$REQ_CLEAN" != "$ACT_CLEAN" ]; then
             echo "❌ Secret mismatch"
             exit 1
           fi
@@ -83,10 +117,9 @@ jobs:
           user_name: github-actions
           user_email: action@github.com
 
-      - name: Notify evaluator (dispatch back to same repo)
-        env:
-          EVAL_URL: https://api.github.com/repos/MVRules/Project_1/dispatches
+      - name: Notify evaluator (dispatch to same repo)
         run: |
+          EVAL_URL=$(jq -r '.evaluation_url' request.json)
           EMAIL=$(jq -r '.email' request.json)
           TASK=$(jq -r '.task' request.json)
           ROUND=$(jq -r '.round' request.json)
@@ -108,28 +141,16 @@ jobs:
 
           echo "$PAYLOAD" | jq .
 
-          # Same repo → can use the workflow token
-          ATTEMPTS=5
-          DELAY=1
-          i=1
-          while [ $i -le $ATTEMPTS ]; do
-            echo "Attempt $i to POST to $EVAL_URL"
-            HTTP_CODE=$(curl -s -o /dev/stderr -w "%{http_code}" \
-              -X POST \
-              -H "Authorization: token ${{ github.token }}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "Content-Type: application/json" \
-              -d "$PAYLOAD" "$EVAL_URL" || echo "000")
-            echo "HTTP code: $HTTP_CODE"
-            if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
-              echo "Evaluator accepted dispatch."
-              exit 0
-            fi
-            echo "Not accepted. Sleeping $DELAY s…"
-            sleep $DELAY
-            DELAY=$((DELAY * 2))
-            i=$((i + 1))
-          done
-
-          echo "Failed to notify evaluator after $ATTEMPTS attempts."
-          exit 1
+          HTTP_CODE=$(curl -s -o /dev/stderr -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: token ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" "$EVAL_URL" || echo "000")
+          echo "HTTP code: $HTTP_CODE"
+          if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+            echo "Evaluator accepted dispatch."
+          else
+            echo "Evaluator did not accept dispatch."
+            exit 1
+          fi
