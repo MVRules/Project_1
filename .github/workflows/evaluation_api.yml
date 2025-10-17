@@ -1,0 +1,63 @@
+name: Evaluation API (repository_dispatch)
+
+on:
+  repository_dispatch:
+    types: [evaluate_submission]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Save submission payload
+        run: |
+          echo '${{ toJson(github.event.client_payload) }}' > submission.json
+          cat submission.json
+
+      - name: Validate required fields
+        run: |
+          required='["email","task","round","nonce","repo_url","commit_sha","pages_url"]'
+          for key in $(echo $required | jq -r '.[]'); do
+            if [ "$(jq -r --arg k "$key" '.[$k] // empty' submission.json)" = "" ]; then
+              echo "❌ Missing field: $key"
+              exit 1
+            fi
+          done
+          echo "✅ Fields present"
+
+      - name: Check match in tasks table
+        run: |
+          EMAIL=$(jq -r '.email' submission.json)
+          TASK=$(jq -r '.task' submission.json)
+          ROUND=$(jq -r '.round' submission.json)
+          NONCE=$(jq -r '.nonce' submission.json)
+
+          if ! [ -f tasks.json ]; then
+            echo "❌ tasks.json not found"
+            exit 1
+          fi
+
+          if jq -e --arg e "$EMAIL" --arg t "$TASK" --argjson r "$ROUND" --arg n "$NONCE" \
+            '.[] | select(.email==$e and .task==$t and .round==$r and .nonce==$n)' tasks.json > /dev/null; then
+            echo "✅ Task match found"
+          else
+            echo "❌ No matching task/round/nonce in tasks.json"
+            exit 1
+          fi
+
+      - name: Append to repos table (repos.jsonl)
+        run: |
+          ts=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          jq --arg ts "$ts" '. + {timestamp: $ts}' submission.json >> repos.jsonl
+          tail -n 1 repos.jsonl | jq .
+
+      - name: Commit repos.jsonl
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Log submission: ${{ github.event.client_payload.email }} / ${{ github.event.client_payload.task }} / r${{ github.event.client_payload.round }}"
+          file_pattern: repos.jsonl
