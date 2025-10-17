@@ -3,6 +3,8 @@
     "email": "you@example.com",
     "task": "quizlet-001",
     "round": 1,
-    "nonce": "manual"
+    "nonce": "manual",
+    "brief": "Build a minimal page",
+    "evaluation_url": "https://api.github.com/repos/MVRules/Project_1/dispatches"
   }
 ]
