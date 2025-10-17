@@ -1,4 +1,4 @@
-name: Evaluation API (no validations)
+name: Evaluation API (no validations, robust logging)
 
 on:
   repository_dispatch:
@@ -15,20 +15,33 @@ jobs:
       - name: Checkout grader repo
         uses: actions/checkout@v4
 
-      - name: Save submission payload
+      # Step 1 — Save payload robustly (creates submission.json even if empty)
+      - name: Save submission payload (robust)
         run: |
-          echo '${{ toJson(github.event.client_payload) }}' > submission.json
-          echo "Submission received:"
-          cat submission.json
+          payload='${{ toJson(github.event.client_payload) }}'
+          if [ -z "$payload" ] || [ "$payload" = "null" ]; then
+            echo '{}' > submission.json
+            echo "ℹ️ No client_payload found; wrote {} to submission.json"
+          else
+            echo "$payload" > submission.json
+          fi
+          # Pretty-print (also validates JSON)
+          jq . submission.json
 
-      # 👇 Unconditional log; no tasks.json checks, no format checks
-      - name: Append to repos.jsonl
+      # Step 2 — Append to repos.jsonl safely (auto-creates the file)
+      - name: Append to repos.jsonl (safe)
         run: |
+          # Ensure log file exists (create empty if missing)
           [ -f repos.jsonl ] || : > repos.jsonl
+
           ts=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          jq --arg ts "$ts" '. + {timestamp: $ts}' submission.json >> repos.jsonl
+          # Coerce non-object/null to {} then add timestamp
+          jq --arg ts "$ts" '(. // {}) + {timestamp: $ts}' submission.json >> repos.jsonl
+
+          # Show the line we just wrote
           tail -n 1 repos.jsonl | jq .
 
+      # Commit the updated repos.jsonl back to the repo
       - name: Commit repos.jsonl
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
@@ -36,4 +49,4 @@ jobs:
           file_pattern: repos.jsonl
 
       - name: Done
-        run: echo "✅ Evaluator accepted submission (no validations)"
+        run: echo "✅ Evaluator accepted submission and logged it"
