@@ -1,4 +1,4 @@
-name: Evaluation API (no validations, robust logging)
+name: Evaluation API (robust, no validations)
 
 on:
   repository_dispatch:
@@ -12,41 +12,43 @@ jobs:
   api:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout grader repo
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      # Step 1 — Save payload robustly (creates submission.json even if empty)
-      - name: Save submission payload (robust)
+      # Optional: quick peek at the raw event for troubleshooting
+      - name: Debug event (optional)
         run: |
-          payload='${{ toJson(github.event.client_payload) }}'
-          if [ -z "$payload" ] || [ "$payload" = "null" ]; then
-            echo '{}' > submission.json
-            echo "ℹ️ No client_payload found; wrote {} to submission.json"
-          else
-            echo "$payload" > submission.json
-          fi
-          # Pretty-print (also validates JSON)
+          set -euo pipefail
+          echo "Event path: $GITHUB_EVENT_PATH"
+          head -n 50 "$GITHUB_EVENT_PATH" || true
+          echo "--- client_payload ---"
+          jq '.client_payload' "$GITHUB_EVENT_PATH" || true
+
+      # Always produce a valid JSON object for the submission
+      - name: Save submission payload (from event file)
+        run: |
+          set -euo pipefail
+          # Extract .client_payload (or {} if missing) as compact JSON
+          jq -c '.client_payload // {}' "$GITHUB_EVENT_PATH" > submission.json
+          echo "submission.json:"
           jq . submission.json
 
-      # Step 2 — Append to repos.jsonl safely (auto-creates the file)
+      # Append safely to repos.jsonl (create the file if missing)
       - name: Append to repos.jsonl (safe)
         run: |
-          # Ensure log file exists (create empty if missing)
+          set -euo pipefail
           [ -f repos.jsonl ] || : > repos.jsonl
-
           ts=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          # Coerce non-object/null to {} then add timestamp
+          # Coerce non-object/null to {} then add timestamp field
           jq --arg ts "$ts" '(. // {}) + {timestamp: $ts}' submission.json >> repos.jsonl
-
-          # Show the line we just wrote
+          echo "Last appended line:"
           tail -n 1 repos.jsonl | jq .
 
-      # Commit the updated repos.jsonl back to the repo
       - name: Commit repos.jsonl
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "log: accept submission (no validations)"
+          commit_message: "log: accept evaluate_submission"
           file_pattern: repos.jsonl
 
       - name: Done
-        run: echo "✅ Evaluator accepted submission and logged it"
+        run: echo "✅ Evaluator accepted and logged the submission"
