@@ -6,5 +6,11 @@
     "nonce": "manual",
     "brief": "Build a minimal page",
     "evaluation_url": "https://api.github.com/repos/MVRules/Project_1/dispatches"
+  },
+  {
+    "email": "manish.vashisht12@gmail.com",
+    "task": "2",
+    "round": 1,
+    "nonce": "manual"
   }
 ]
